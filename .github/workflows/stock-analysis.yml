@@ -1,1 +1,79 @@
+name: Live Stock Market Analysis
 
+on:
+  schedule:
+    # Run every 15 minutes during market hours (9:30 AM - 4:00 PM EST)
+    # 9:30, 9:45, 10:00, 10:15, etc.
+    - cron: '*/15 14-20 * * 1-5'  # 14-20 UTC = 9 AM - 3 PM EST
+  # Also run during pre-market (every 30 min)
+    - cron: '*/30 12-13 * * 1-5'  # 12-13 UTC = 7-8 AM EST
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      stocks:
+        description: 'Custom stocks (comma-separated, e.g., AAPL,MSFT,GOOGL)'
+        required: false
+        default: ''
+      alert_threshold:
+        description: 'Alert threshold percentage (e.g., 2.5)'
+        required: false
+        default: '2.0'
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install yfinance pandas numpy
+    
+    - name: Run live stock analysis
+      env:
+        STOCKS_TO_ANALYZE: ${{ github.event.inputs.stocks || 'SPY,QQQ,AAPL,MSFT,NVDA,GOOGL,TSLA,AMZN,META' }}
+        ALERT_THRESHOLD: ${{ github.event.inputs.alert_threshold || '2.0' }}
+        SEND_ALERTS: 'false'  # Set to 'true' and configure secrets below for email alerts
+        # Email configuration (optional)
+        SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+        SMTP_PORT: ${{ secrets.SMTP_PORT }}
+        SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+        SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
+        RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+      run: |
+        python stock_analysis.py
+    
+    - name: Upload live reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: live-stock-reports-${{ github.run_id }}
+        path: reports/
+        retention-days: 7
+    
+    - name: Update GitHub Pages (optional)
+      if: always()
+      run: |
+        # If you have GitHub Pages enabled, copy HTML report to docs/ folder
+        mkdir -p docs
+        cp reports/live_dashboard.html docs/index.html
+        echo "📊 Live dashboard ready for GitHub Pages"
+    
+    - name: Create workflow summary
+      run: |
+        echo "## 📈 Live Stock Market Analysis" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Time:** $(date '+%Y-%m-%d %H:%M:%S')" >> $GITHUB_STEP_SUMMARY
+        echo "**Market Status:** $(python -c "from datetime import datetime; print('OPEN' if datetime.now().hour >= 9 and datetime.now().hour < 16 else 'CLOSED')")" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📊 Download Reports" >> $GITHUB_STEP_SUMMARY
+        echo "- 📄 [JSON Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+        echo "- 📊 [CSV Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+        echo "- 🌐 [Live Dashboard](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
